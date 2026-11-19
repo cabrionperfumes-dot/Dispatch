@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dispatch Scan">
+<title>Dispatch Scanner – Cabrion</title>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6e6e73;--line:#e3e1dc;--accent:#b4232c;--ok:#1f7a3f;--warn:#b26a00}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);-webkit-text-size-adjust:100%}
+  .wrap{max-width:560px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 12px 120px}
+  h1{font-size:19px;margin:4px 0 10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+  label.f{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+  input[type=text],input[type=date]{width:100%;font-size:16px;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  .row{display:flex;gap:8px}.row>div{flex:1}
+  .camwrap{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3;display:none;margin-bottom:10px}
+  video{width:100%;height:100%;object-fit:cover;display:block}
+  .guide{position:absolute;left:8%;right:8%;top:35%;height:30%;border:3px solid rgba(255,255,255,.85);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.25);transition:border-color .15s}
+  .guide.hit{border-color:#3ddc84}.guide.dup{border-color:#ff5a5a}
+  .camcount{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);color:#fff;font-weight:700;font-size:22px;padding:4px 12px;border-radius:10px}
+  .camlast{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;font:600 16px ui-monospace,Menlo,monospace;padding:8px 10px;border-radius:10px;text-align:center}
+  .count{display:flex;align-items:baseline;gap:8px}.count b{font-size:42px;line-height:1;color:var(--accent)}.count span{color:var(--muted)}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:12px;padding:15px;font-size:17px;font-weight:600;cursor:pointer}
+  .primary{background:var(--accent);color:#fff}.dark{background:var(--ink);color:#fff}.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .addrow{display:flex;gap:8px;margin-top:10px}.addrow input{flex:1;text-transform:uppercase}.addrow .btn{width:auto;padding:0 18px}
+  ol{list-style:none;margin:0;padding:0}
+  li{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line)}li:last-child{border-bottom:0}
+  .n{width:28px;color:var(--muted);font-size:14px}.code{flex:1;font:600 16px ui-monospace,Menlo,monospace}.code small{display:block;font:400 11px -apple-system,sans-serif;color:var(--muted)}
+  .del{background:none;border:0;color:var(--muted);font-size:20px;padding:4px 8px}
+  .empty{color:var(--muted);text-align:center;padding:16px 0;font-size:14px}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(246,245,242,.97);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+  .bar .in{max-width:560px;margin:0 auto;display:flex;gap:8px}
+  .toast{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top));transform:translateX(-50%);max-width:92%;padding:11px 16px;border-radius:12px;color:#fff;font-weight:600;z-index:50;display:none;text-align:center}
+  .toast.ok{background:var(--ok)}.toast.err{background:var(--accent)}.toast.warn{background:var(--warn)}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+  .modal .box{background:#fff;border-radius:14px;padding:18px;max-width:360px;width:100%}.modal p{margin:0 0 14px;font-size:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📦 Cabrion Dispatch Scanner</h1>
+  <div class="card">
+    <div class="row">
+      <div><label class="f" for="date">Date</label><input type="date" id="date"></div>
+      <div><label class="f" for="po">Post office</label><input type="text" id="po" value="Rajkot BD Cell"></div>
+    </div>
+  </div>
+
+  <div class="camwrap" id="camwrap">
+    <video id="video" playsinline muted></video>
+    <div class="guide" id="guide"></div>
+    <div class="camcount" id="camcount">0</div>
+    <div class="camlast" id="camlast">Point at barcode…</div>
+  </div>
+
+  <div class="card">
+    <div class="count"><b id="cnt">0</b><span>parcels scanned</span></div>
+    <button class="btn primary" id="camBtn" style="margin-top:10px">📷 Start Live Scan</button>
+    <div class="addrow">
+      <input type="text" id="manual" placeholder="Or type number" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done">
+      <button class="btn dark" id="addBtn">Add</button>
+    </div>
+  </div>
+
+  <div class="card"><ol id="list"></ol></div>
+</div>
+
+<div class="bar"><div class="in">
+  <button class="btn ghost" id="newBtn" style="flex:0 0 34%">New batch</button>
+  <button class="btn dark" id="pdfBtn">📄 Convert to PDF</button>
+</div></div>
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal"><div class="box"><p id="mText"></p><div class="row"><div><button class="btn ghost" id="mNo">Cancel</button></div><div><button class="btn primary" id="mYes">Yes</button></div></div></div></div>
+
+<script>
+const KEY='cabrion_live_dispatch_v1',$=id=>document.getElementById(id),PAT=/^[A-Z]{2}\d{9}[A-Z]{2}$/;
+let items=[],reader=null,running=false,lastSeen={},audioCtx=null;
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+function save(){try{localStorage.setItem(KEY,JSON.stringify({items,date:$('date').value,po:$('po').value}))}catch(e){}}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY)||'null');if(s){items=s.items||[];$('date').value=s.date||today();$('po').value=s.po||'Rajkot BD Cell';return}}catch(e){}$('date').value=today()}
+let tt;function toast(m,k){const t=$('toast');t.textContent=m;t.className='toast '+k;t.style.display='block';clearTimeout(tt);tt=setTimeout(()=>t.style.display='none',k==='ok'?1400:2800)}
+function ask(text){return new Promise(r=>{$('mText').textContent=text;$('modal').style.display='flex';$('mYes').onclick=()=>{$('modal').style.display='none';r(true)};$('mNo').onclick=()=>{$('modal').style.display='none';r(false)}})}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtTime=t=>new Date(t).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+function beep(ok){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.frequency.value=ok?1500:300;g.gain.value=.15;o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+(ok?.12:.35))}catch(e){}try{navigator.vibrate&&navigator.vibrate(ok?60:[90,60,90])}catch(e){}}
+function flash(cls){const g=$('guide');g.classList.add(cls);setTimeout(()=>g.classList.remove(cls),500)}
+
+function render(){
+  $('cnt').textContent=items.length;$('camcount').textContent=items.length;
+  const L=$('list');L.innerHTML='';
+  if(!items.length){L.innerHTML='<div class="empty">No parcels yet.</div>';return}
+  items.slice().reverse().forEach((it,ri)=>{const i=items.length-1-ri;const li=document.createElement('li');
+    li.innerHTML='<span class="n">'+(i+1)+'</span><span class="code">'+esc(it.code)+'<small>'+fmtTime(it.t)+(PAT.test(it.code)?'':' · check number')+'</small></span>';
+    const b=document.createElement('button');b.className='del';b.textContent='✕';
+    b.onclick=async()=>{if(await ask('Remove '+it.code+'?')){items.splice(i,1);save();render()}};li.appendChild(b);L.appendChild(li)})
+}
+function clean(raw){const s=String(raw||'').toUpperCase().replace(/\s+/g,'');const m=s.match(/[A-Z]{2}\d{9}[A-Z]{2}/);return m?m[0]:s.replace(/[^A-Z0-9]/g,'')}
+function addCode(raw,fromCam){
+  const code=clean(raw);if(!code)return false;
+  const now=Date.now();
+  if(items.some(x=>x.code===code)){
+    if(!fromCam||!lastSeen[code]||now-lastSeen[code]>2500){beep(false);flash('dup');$('camlast').textContent='⚠️ ALREADY: '+code;if(!fromCam)toast('Already scanned: '+code,'err')}
+    lastSeen[code]=now;return false}
+  lastSeen[code]=now;items.push({code,t:now});save();render();beep(true);flash('hit');
+  $('camlast').textContent='✅ #'+items.length+'  '+code;if(!fromCam)toast('#'+items.length+' '+code,'ok');return true}
+
+async function startCam(){
+  if(!window.ZXing){toast('Scanner loading, try again','err');return}
+  const Z=window.ZXing,hints=new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.CODE_128,Z.BarcodeFormat.CODE_39,Z.BarcodeFormat.CODE_93,Z.BarcodeFormat.QR_CODE,Z.BarcodeFormat.DATA_MATRIX,Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.ITF]);
+  hints.set(Z.DecodeHintType.TRY_HARDER,true);
+  reader=new Z.BrowserMultiFormatReader(hints,150);
+  $('camwrap').style.display='block';$('camBtn').textContent='⏹ Stop Scan';running=true;beep(true);
+  try{
+    await reader.decodeFromConstraints({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}},$('video'),(res)=>{if(res)addCode(res.getText(),true)});
+  }catch(e){stopCam();toast('Camera blocked. Allow camera for this site in Settings › Safari › Camera.','err')}
+}
+function stopCam(){try{reader&&reader.reset()}catch(e){}reader=null;running=false;$('camwrap').style.display='none';$('camBtn').textContent='📷 Start Live Scan'}
+$('camBtn').onclick=()=>running?stopCam():startCam();
+$('addBtn').onclick=()=>{if(addCode($('manual').value,false))$('manual').value=''};
+$('manual').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('addBtn').click()}});
+['date','po'].forEach(id=>$(id).addEventListener('input',save));
+$('newBtn').onclick=async()=>{if(items.length&&await ask('Clear all '+items.length+' parcels and start new batch? Make the PDF first!')){items=[];$('date').value=today();save();render();$('camlast').textContent='Point at barcode…'}};
+
+const fmtDate=v=>{if(!v)return'';const[y,m,d]=v.split('-');return d+'-'+m+'-'+y};
+function numWords(n){const a=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'],b=['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];const w=n=>n<20?a[n]:n<100?b[Math.floor(n/10)]+(n%10?'-'+a[n%10]:''):n<1000?a[Math.floor(n/100)]+' hundred'+(n%100?' '+w(n%100):''):String(n);return w(n)}
+function buildPDF(){
+  const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4'}),W=210,M=12,date=fmtDate($('date').value),po=$('po').value.trim(),sender='Cabrion Perfumes';
+  const now=new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const N=items.length,rowH=6.6,colW=(W-2*M-6)/2;
+  const header=p=>{doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('PARCEL HANDOVER LIST',M,18);doc.setFont('helvetica','normal');doc.setFontSize(10);
+    doc.text('Sender: '+sender,M,25);doc.text('Dispatch date: '+date,M,30.5);doc.text('Post office: '+(po||'________________'),M,36);doc.text('List generated: '+now,M,41.5);
+    doc.setDrawColor(180,35,44);doc.setLineWidth(.6);doc.rect(W-M-48,11,48,32);doc.setFontSize(9);doc.text('TOTAL PARCELS',W-M-24,17,{align:'center'});
+    doc.setFont('helvetica','bold');doc.setFontSize(30);doc.setTextColor(180,35,44);doc.text(String(N),W-M-24,33,{align:'center'});doc.setTextColor(0);doc.setFontSize(8);doc.setFont('helvetica','normal');doc.text('Page '+p,W-M-24,40,{align:'center'});
+    doc.setDrawColor(0);doc.setLineWidth(.2);doc.line(M,46,W-M,46)};
+  const colHead=(x,y)=>{doc.setFillColor(238,236,232);doc.rect(x,y,colW,rowH,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('No.',x+2,y+4.4);doc.text('Article / Tracking No.',x+13,y+4.4);doc.text('Time',x+colW-20,y+4.4);doc.text('OK',x+colW-7,y+4.4)};
+  const top=50,footerH=50,perLast=Math.floor((297-top-footerH-rowH)/rowH),perFull=Math.floor((297-top-14-rowH)/rowH);
+  let i=0,page=1;
+  while(true){const lastFits=(N-i)<=perLast*2,per=lastFits?perLast:perFull;if(page>1)doc.addPage();header(page);
+    for(let c=0;c<2;c++){const x=M+c*(colW+6);colHead(x,top);
+      for(let r=0;r<per&&i<N;r++,i++){const y=top+rowH*(r+1),it=items[i];if(r%2){doc.setFillColor(250,249,247);doc.rect(x,y,colW,rowH,'F')}
+        doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(String(i+1),x+2,y+4.4);doc.setFont('courier','bold');doc.setFontSize(10.5);doc.text(it.code,x+13,y+4.5);
+        doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(fmtTime(it.t),x+colW-20,y+4.4);doc.rect(x+colW-7,y+1.4,3.8,3.8);doc.setDrawColor(225);doc.line(x,y+rowH,x+colW,y+rowH);doc.setDrawColor(0)}}
+    if(lastFits)break;page++}
+  const y0=297-footerH+2;doc.setLineWidth(.3);doc.line(M,y0-3,W-M,y0-3);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text('Received '+N+' ('+numWords(N)+') parcels as listed above, for booking.',M,y0+3);doc.setFont('helvetica','normal');doc.setFontSize(9.5);
+  [['Counter clerk name',y0+14],['Signature',y0+24],['Date & time',y0+34]].forEach(([t,y])=>{doc.text(t+':',M,y);doc.line(M+35,y+.8,M+105,y+.8)});
+  doc.rect(W-M-62,y0+7,62,34);doc.setFontSize(8);doc.setTextColor(120);doc.text('Post Office stamp',W-M-31,y0+38,{align:'center'});doc.setTextColor(0);doc.text('Handed over by: '+sender,M,y0+44);
+  return doc}
+$('pdfBtn').onclick=async()=>{
+  if(!items.length){toast('Scan some parcels first','err');return}
+  if(!window.jspdf){toast('PDF maker loading, try again','err');return}
+  if(running)stopCam();
+  const doc=buildPDF(),name='Dispatch_'+fmtDate($('date').value)+'_'+items.length+'_parcels.pdf',blob=doc.output('blob');
+  try{const file=new File([blob],name,{type:'application/pdf'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}}catch(e){if(e&&e.name==='AbortError')return}
+  doc.save(name)};
+load();render();
+</script>
+</body>
+</html>
